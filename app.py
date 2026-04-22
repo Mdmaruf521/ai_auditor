@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -6,12 +5,14 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import io
+import json
+import hashlib
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="AEGIS V14 // AI OBSERVABILITY OS",
+    page_title="AI CAUGHT // AI OBSERVABILITY OS",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -34,14 +35,16 @@ section[data-testid="stSidebar"] { background: #050d1a !important; border-right:
 
 .aegis-title {
     font-family: 'Syne', sans-serif;
-    font-size: 2.4rem;
+    font-size: clamp(1.4rem, 3vw, 2.4rem);
     font-weight: 800;
     background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #34d399 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    line-height: 1.1;
+    line-height: 1.2;
     margin-bottom: 0.2rem;
+    padding-top: 0.5rem;
+    word-break: break-word;
 }
 .aegis-subtitle {
     font-family: 'Space Mono', monospace;
@@ -292,7 +295,7 @@ def section_header(title, badge=None):
 # SIDEBAR
 # ─────────────────────────────────────────────
 with st.sidebar:
-    st.markdown('<div class="sidebar-logo">AEGIS V14</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-logo">AI CAUGHT</div>', unsafe_allow_html=True)
     st.markdown('<div class="sidebar-tagline">AI Observability OS // Enterprise Grade</div>', unsafe_allow_html=True)
 
     health = round((1 - df["risk"].mean()) * 100, 1)
@@ -341,12 +344,24 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════
 if page == "Dashboard":
 
-    section_header("AI Observability Command Center", "LIVE")
-    st.markdown('<div class="aegis-subtitle">Real-time surveillance across all model behaviours, failure modes and risk surfaces</div>', unsafe_allow_html=True)
+    # ── Fixed title with padding so it clears the sidebar toggle bar ──
+    st.markdown(
+        '<div style="padding-top:0.25rem;">'
+        '<div class="aegis-title">AI Observability Command Center'
+        '<span class="nav-chip">LIVE</span></div>'
+        '<div class="aegis-subtitle">Real-time surveillance across all model behaviours, failure modes and risk surfaces</div>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    # ── Model selector for dashboard ──────────────────────
+    all_models = ["All Models"] + sorted(df["model"].unique().tolist())
+    dash_model = st.selectbox("Filter Dashboard by Model", all_models, key="dash_model_select")
+    ddf = df if dash_model == "All Models" else df[df["model"] == dash_model]
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    avg_risk  = df["risk"].mean()
-    hall_rate = df["hallucination"].mean()
+    avg_risk  = ddf["risk"].mean()
+    hall_rate = ddf["hallucination"].mean()
     risk_color = "#f87171" if avg_risk > 0.4 else "#fbbf24" if avg_risk > 0.25 else "#34d399"
 
     with c1:
@@ -359,7 +374,7 @@ if page == "Dashboard":
     with c2:
         st.markdown(
             f'<div class="metric-card"><div class="label">Truth Gap</div>'
-            f'<div class="value">{df["truth_gap"].mean():.3f}</div>'
+            f'<div class="value">{ddf["truth_gap"].mean():.3f}</div>'
             f'<div class="delta">Confidence vs Reality</div></div>',
             unsafe_allow_html=True
         )
@@ -373,12 +388,12 @@ if page == "Dashboard":
     with c4:
         st.markdown(
             f'<div class="metric-card"><div class="label">Avg Latency</div>'
-            f'<div class="value">{df["latency"].mean():.0f}ms</div>'
-            f'<div class="delta">P95: {df["latency"].quantile(0.95):.0f}ms</div></div>',
+            f'<div class="value">{ddf["latency"].mean():.0f}ms</div>'
+            f'<div class="delta">P95: {ddf["latency"].quantile(0.95):.0f}ms</div></div>',
             unsafe_allow_html=True
         )
     with c5:
-        toxic_pct = (df["toxicity"] > 0.15).mean()
+        toxic_pct = (ddf["toxicity"] > 0.15).mean()
         st.markdown(
             f'<div class="metric-card"><div class="label">Toxicity Flags</div>'
             f'<div class="value" style="color:#f87171">{toxic_pct:.2%}</div>'
@@ -395,27 +410,27 @@ if page == "Dashboard":
 
     # Smart Alerts
     st.markdown('<div class="section-label">Live Alerts</div>', unsafe_allow_html=True)
-    worst_domain = df.groupby("domain")["risk"].mean().idxmax()
-    worst_model  = df.groupby("model")["risk"].mean().idxmax()
+    worst_domain = ddf.groupby("domain")["risk"].mean().idxmax()
+    worst_model  = ddf.groupby("model")["risk"].mean().idxmax() if dash_model == "All Models" else dash_model
 
     st.markdown(
         f'<div class="alert-critical">CRITICAL: {worst_domain} domain has the highest risk exposure '
-        f'({df[df.domain==worst_domain]["risk"].mean():.3f}). Immediate review recommended.</div>',
+        f'({ddf[ddf.domain==worst_domain]["risk"].mean():.3f}). Immediate review recommended.</div>',
         unsafe_allow_html=True
     )
     st.markdown(
         f'<div class="alert-warning">WARNING: {worst_model} shows elevated hallucination patterns '
-        f'({df[df.model==worst_model]["hallucination"].mean():.2%} rate). '
+        f'({ddf[ddf.model==worst_model]["hallucination"].mean():.2%} rate). '
         f'Consider additional validation layers.</div>',
         unsafe_allow_html=True
     )
     st.markdown(
         f'<div class="alert-ok">OK: Average toxicity is within acceptable bounds '
-        f'({df["toxicity"].mean():.3f} avg).</div>',
+        f'({ddf["toxicity"].mean():.3f} avg).</div>',
         unsafe_allow_html=True
     )
     st.markdown(
-        f'<div class="alert-info">INFO: Truth Gap of {df["truth_gap"].mean():.3f} indicates models are '
+        f'<div class="alert-info">INFO: Truth Gap of {ddf["truth_gap"].mean():.3f} indicates models are '
         f'moderately overconfident. Standard for production LLMs.</div>',
         unsafe_allow_html=True
     )
@@ -423,12 +438,12 @@ if page == "Dashboard":
 
     col1, col2 = st.columns(2)
     with col1:
-        fig = style_fig(px.histogram(df, x="risk", nbins=40, title="1. Risk Distribution",
+        fig = style_fig(px.histogram(ddf, x="risk", nbins=40, title="1. Risk Distribution",
                                      color_discrete_sequence=["#38bdf8"]))
         st.plotly_chart(fig, use_container_width=True)
         st.caption("How often your system enters unsafe output territory. Left = safe. Right = dangerous.")
     with col2:
-        fig2 = style_fig(px.scatter(df, x="confidence", y="correctness", color="domain",
+        fig2 = style_fig(px.scatter(ddf, x="confidence", y="correctness", color="domain",
                                     title="2. Confidence vs Reality", opacity=0.6))
         fig2.add_shape(type="line", x0=0, y0=0, x1=1, y1=1,
                        line=dict(color="#f87171", dash="dash", width=2))
@@ -437,23 +452,23 @@ if page == "Dashboard":
 
     col3, col4 = st.columns(2)
     with col3:
-        fig3 = style_fig(px.density_heatmap(df, x="confidence", y="correctness",
+        fig3 = style_fig(px.density_heatmap(ddf, x="confidence", y="correctness",
                                              title="3. Failure Heatmap", color_continuous_scale="Blues"))
         st.plotly_chart(fig3, use_container_width=True)
         st.caption("Bright clusters = systematic failure zones.")
     with col4:
-        fig4 = style_fig(px.box(df, x="model", y="risk", title="4. Model Risk Profile", color="model"))
+        fig4 = style_fig(px.box(ddf, x="model", y="risk", title="4. Model Risk Profile", color="model"))
         st.plotly_chart(fig4, use_container_width=True)
         st.caption("Each model has a unique failure fingerprint. Taller boxes = more unpredictable.")
 
     col5, col6 = st.columns(2)
     with col5:
-        fig5 = style_fig(px.scatter(df, x="latency", y="risk", title="5. Latency vs Risk",
+        fig5 = style_fig(px.scatter(ddf, x="latency", y="risk", title="5. Latency vs Risk",
                                     color="model", opacity=0.5))
         st.plotly_chart(fig5, use_container_width=True)
         st.caption("Slow models are not automatically safer.")
     with col6:
-        domain_risk = df.groupby("domain")["risk"].mean().reset_index().sort_values("risk", ascending=False)
+        domain_risk = ddf.groupby("domain")["risk"].mean().reset_index().sort_values("risk", ascending=False)
         fig6 = style_fig(px.bar(domain_risk, x="domain", y="risk", title="6. Domain Risk Exposure",
                                 color="risk", color_continuous_scale="Reds"))
         st.plotly_chart(fig6, use_container_width=True)
@@ -461,7 +476,7 @@ if page == "Dashboard":
 
     col7, col8 = st.columns(2)
     with col7:
-        hall_counts = df["hallucination"].value_counts().reset_index()
+        hall_counts = ddf["hallucination"].value_counts().reset_index()
         hall_counts.columns = ["hallucinated", "count"]
         hall_counts["hallucinated"] = hall_counts["hallucinated"].map(
             {0: "No Hallucination", 1: "Hallucinated"})
@@ -471,30 +486,30 @@ if page == "Dashboard":
         st.plotly_chart(fig7, use_container_width=True)
         st.caption("What fraction of all AI responses contained fabricated information.")
     with col8:
-        fig8 = style_fig(px.violin(df, x="model", y="risk", title="8. Risk Distribution Shape",
+        fig8 = style_fig(px.violin(ddf, x="model", y="risk", title="8. Risk Distribution Shape",
                                    color="model", box=True))
         st.plotly_chart(fig8, use_container_width=True)
         st.caption("Wide violin = inconsistent. Narrow violin = predictable. You want narrow.")
 
-    fig9 = style_fig(px.scatter_3d(df.sample(400), x="confidence", y="correctness", z="latency",
+    fig9 = style_fig(px.scatter_3d(ddf.sample(min(400, len(ddf))), x="confidence", y="correctness", z="latency",
                                    color="model", title="9. 3D Behavior Space", opacity=0.7))
     st.plotly_chart(fig9, use_container_width=True)
     st.caption("Full behavior fingerprint: confidence, correctness, and latency in a single view.")
 
     col9, col10 = st.columns(2)
     with col9:
-        fig10 = style_fig(px.line(df.sort_values("confidence"), y="risk", title="10. Risk Curve",
+        fig10 = style_fig(px.line(ddf.sort_values("confidence"), y="risk", title="10. Risk Curve",
                                   color_discrete_sequence=["#818cf8"]))
         st.plotly_chart(fig10, use_container_width=True)
         st.caption("How total risk evolves as model confidence increases.")
     with col10:
-        corr = df[["risk","confidence","correctness","latency"]].corr()
+        corr = ddf[["risk","confidence","correctness","latency"]].corr()
         fig11 = style_fig(px.imshow(corr, title="11. Correlation Matrix",
                                     color_continuous_scale="RdBu_r", zmin=-1, zmax=1))
         st.plotly_chart(fig11, use_container_width=True)
         st.caption("Hidden relationships between system metrics.")
 
-    fig12 = style_fig(px.histogram(df, x="truth_gap", nbins=40, title="12. Truth Gap Distribution",
+    fig12 = style_fig(px.histogram(ddf, x="truth_gap", nbins=40, title="12. Truth Gap Distribution",
                                    color_discrete_sequence=["#fbbf24"]))
     fig12.add_vline(x=0, line_dash="dash", line_color="#f87171", annotation_text="Perfect Calibration")
     st.plotly_chart(fig12, use_container_width=True)
@@ -502,7 +517,7 @@ if page == "Dashboard":
 
 
 # ═══════════════════════════════════════════════════════════
-#  PROMPT LAB
+#  PROMPT LAB  — enriched logic, no LLM required
 # ═══════════════════════════════════════════════════════════
 elif page == "Prompt Lab":
 
@@ -511,8 +526,8 @@ elif page == "Prompt Lab":
 
     plain_explainer("How This Works",
         "This tool scans your AI prompt and the response it generated. It checks: Is the prompt clear enough? "
-        "Does the response use overconfident language like 'always' or 'guarantee'? "
-        "You get an instant risk score — no technical knowledge required."
+        "Does the response use overconfident language? Does it have RAG grounding? "
+        "You get a detailed risk breakdown — no technical knowledge required."
     )
 
     col_a, col_b = st.columns(2)
@@ -523,41 +538,177 @@ elif page == "Prompt Lab":
         response = st.text_area("Response (what the AI said)", height=160,
                                 placeholder="Paste the AI response here...")
 
-    opt_cols = st.columns(2)
+    opt_cols = st.columns(3)
     with opt_cols[0]:
         domain_sel = st.selectbox("Domain Context", ["General","Legal","Medical","Finance","Code","Support"])
     with opt_cols[1]:
         model_sel = st.selectbox("Model Used", ["GPT-4o","Claude","Gemini","Llama","Other"])
+    with opt_cols[2]:
+        rag_enabled = st.selectbox("RAG / Knowledge Grounding", ["No RAG (open generation)","RAG enabled — internal docs","RAG enabled — verified external","Fine-tuned domain model"])
+
+    adv_col1, adv_col2, adv_col3 = st.columns(3)
+    with adv_col1:
+        temperature = st.slider("Model Temperature", 0.0, 1.0, 0.7, 0.05,
+                                help="Higher = more creative/risky. Lower = more deterministic.")
+    with adv_col2:
+        system_prompt_quality = st.selectbox("System Prompt Quality",
+            ["None / Default", "Basic role instruction", "Detailed with constraints", "Production-grade with guardrails"])
+    with adv_col3:
+        use_case_sensitivity = st.selectbox("Use Case Sensitivity",
+            ["Low (internal draft)", "Medium (customer-facing)", "High (regulated output)", "Critical (life/legal/financial)"])
 
     if st.button("Run Audit"):
         if prompt.strip() and response.strip():
-            words   = len(prompt.split())
-            clarity = min(words / 35, 1)
 
-            dangerous_words = ["guarantee","always","never","definitely","certainly","100%","proven","impossible"]
-            hedge_words     = ["possibly","might","could","may","approximately","around","likely"]
-            danger_count = sum(1 for w in dangerous_words if w in response.lower())
-            hedge_count  = sum(1 for w in hedge_words     if w in response.lower())
+            # ── Deterministic but varied scoring engine ─────
+            # Seed based on prompt+response hash so the SAME inputs always give the SAME result
+            # but DIFFERENT inputs give different results
+            seed_val = int(hashlib.md5((prompt + response + model_sel + domain_sel).encode()).hexdigest(), 16) % (2**31)
+            rng = np.random.default_rng(seed_val)
 
-            risk = (
-                (1 - clarity) * 0.4 +
-                min(len(response) / 2000, 1) * 0.2 +
-                (danger_count / max(len(dangerous_words), 1)) * 0.4
-            )
-            truth_gap = abs(len(prompt) - len(response)) / max(len(prompt), 1)
+            prompt_words   = len(prompt.split())
+            response_words = len(response.split())
+            prompt_chars   = len(prompt)
+            response_chars = len(response)
 
+            # --- Clarity ---
+            clarity = min(prompt_words / 35, 1.0)
+            # Reward question marks, penalise very short prompts
+            if "?" in prompt: clarity = min(clarity + 0.08, 1.0)
+            if prompt_words < 5: clarity = max(clarity - 0.25, 0.0)
+            if prompt_words > 60: clarity = min(clarity + 0.12, 1.0)
+
+            # --- Overconfidence flags ---
+            dangerous_words = ["guarantee","always","never","definitely","certainly","100%",
+                               "proven","impossible","absolutely","without doubt","confirmed fact",
+                               "scientifically proven","guaranteed","no exceptions","irrefutably"]
+            hedge_words     = ["possibly","might","could","may","approximately","around","likely",
+                               "suggests","indicates","appears","seems","based on available","unclear",
+                               "uncertain","varies","consult","verify","double-check"]
+            citation_words  = ["according to","source:","reference:","study shows","research indicates",
+                               "published","per the","as per","cited in","from the"]
+
+            danger_count   = sum(1 for w in dangerous_words if w in response.lower())
+            hedge_count    = sum(1 for w in hedge_words     if w in response.lower())
+            citation_count = sum(1 for w in citation_words  if w in response.lower())
+
+            # --- RAG adjustment ---
+            rag_risk_reduction = {
+                "No RAG (open generation)": 0.0,
+                "RAG enabled — internal docs": -0.12,
+                "RAG enabled — verified external": -0.18,
+                "Fine-tuned domain model": -0.10,
+            }
+            rag_reduction = rag_risk_reduction.get(rag_enabled, 0.0)
+
+            # --- Temperature effect ---
+            temp_risk_add = temperature * 0.18  # high temp = higher hallucination risk
+
+            # --- System prompt quality ---
+            sys_prompt_mod = {
+                "None / Default": 0.10,
+                "Basic role instruction": 0.04,
+                "Detailed with constraints": -0.05,
+                "Production-grade with guardrails": -0.12,
+            }
+            sys_mod = sys_prompt_mod.get(system_prompt_quality, 0.0)
+
+            # --- Use case sensitivity ---
+            sensitivity_mod = {
+                "Low (internal draft)": -0.04,
+                "Medium (customer-facing)": 0.02,
+                "High (regulated output)": 0.08,
+                "Critical (life/legal/financial)": 0.15,
+            }
+            sens_mod = sensitivity_mod.get(use_case_sensitivity, 0.0)
+
+            # --- Domain base risk ---
             domain_risk_adj = {"Legal":0.08,"Medical":0.10,"Finance":0.07,"Code":0.03,"General":0,"Support":0.02}
-            risk = min(risk + domain_risk_adj.get(domain_sel, 0), 1.0)
+            domain_add = domain_risk_adj.get(domain_sel, 0)
+
+            # --- Model baseline variance ---
+            model_baselines = {
+                "GPT-4o":  {"risk": 0.0,   "hall": 0.11, "latency": 820,  "calibration": 0.78},
+                "Claude":  {"risk": -0.03, "hall": 0.09, "latency": 960,  "calibration": 0.82},
+                "Gemini":  {"risk": 0.02,  "hall": 0.13, "latency": 740,  "calibration": 0.75},
+                "Llama":   {"risk": 0.05,  "hall": 0.16, "latency": 1100, "calibration": 0.70},
+                "Other":   {"risk": 0.04,  "hall": 0.14, "latency": 950,  "calibration": 0.72},
+            }
+            model_b = model_baselines.get(model_sel, model_baselines["Other"])
+
+            # --- Core risk computation ---
+            base_risk = (
+                (1 - clarity) * 0.25 +
+                min(response_chars / 3000, 1) * 0.15 +
+                (danger_count / max(len(dangerous_words), 1)) * 0.30 +
+                (1 - min(hedge_count / 5, 1)) * 0.15 +
+                model_b["risk"] * 0.15
+            )
+            risk = base_risk + domain_add + rag_reduction + temp_risk_add + sys_mod + sens_mod
+            risk = float(np.clip(risk + rng.uniform(-0.04, 0.04), 0.0, 1.0))
+
+            # --- Truth gap proxy ---
+            truth_gap = abs(prompt_chars - response_chars) / max(prompt_chars, 1)
+            truth_gap = min(truth_gap, 5.0)
+
+            # --- Hallucination likelihood ---
+            hall_prob = model_b["hall"] + (domain_add * 0.5) + (temp_risk_add * 0.4) + (danger_count * 0.03)
+            hall_prob = float(np.clip(hall_prob + rng.uniform(-0.02, 0.02), 0.0, 1.0))
+
+            # --- Calibration score ---
+            calibration_score = model_b["calibration"] - (danger_count * 0.05) + (hedge_count * 0.02) + (citation_count * 0.03)
+            calibration_score = float(np.clip(calibration_score + rng.uniform(-0.03, 0.03), 0.0, 1.0))
+
+            # --- Estimated latency ---
+            latency_est = int(model_b["latency"] * (0.8 + temperature * 0.4) * (0.5 + response_words / 200))
+
+            # --- Complexity score ---
+            complexity_score = min((prompt_words / 20) * 0.4 + (response_words / 100) * 0.6, 1.0)
+
+            # --- Store for export ---
+            st.session_state["last_audit"] = {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "prompt": prompt,
+                "response": response,
+                "model": model_sel,
+                "domain": domain_sel,
+                "rag": rag_enabled,
+                "temperature": temperature,
+                "system_prompt_quality": system_prompt_quality,
+                "use_case_sensitivity": use_case_sensitivity,
+                "clarity_score": round(clarity, 3),
+                "hallucination_risk": round(risk, 3),
+                "hallucination_likelihood_pct": round(hall_prob * 100, 1),
+                "truth_gap_proxy": round(truth_gap, 3),
+                "hedge_ratio": f"{hedge_count}/{response_words}",
+                "calibration_score": round(calibration_score, 3),
+                "danger_words_found": [w for w in dangerous_words if w in response.lower()],
+                "hedge_words_found": [w for w in hedge_words if w in response.lower()],
+                "citation_signals": citation_count,
+                "estimated_latency_ms": latency_est,
+                "complexity_score": round(complexity_score, 3),
+            }
+            audit = st.session_state["last_audit"]
 
             st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
-            r1, r2, r3, r4 = st.columns(4)
-            r1.metric("Clarity Score",       f"{clarity:.2f}")
-            r2.metric("Hallucination Risk",  f"{risk:.2f}")
-            r3.metric("Truth Gap Proxy",     f"{truth_gap:.2f}")
-            r4.metric("Hedge Ratio",         f"{hedge_count}/{len(response.split())}")
+            st.markdown("#### Core Metrics")
+            r1, r2, r3, r4, r5, r6 = st.columns(6)
+            r1.metric("Clarity Score",          f"{clarity:.2f}")
+            r2.metric("Hallucination Risk",     f"{risk:.2f}")
+            r3.metric("Hall. Likelihood",       f"{hall_prob:.1%}")
+            r4.metric("Truth Gap Proxy",        f"{truth_gap:.2f}")
+            r5.metric("Calibration",            f"{calibration_score:.2f}")
+            r6.metric("Hedge Ratio",            f"{hedge_count}/{response_words}")
 
-            st.markdown("**Risk Level:**")
-            st.progress(min(risk, 1))
+            st.markdown("#### Extended Metrics")
+            e1, e2, e3, e4 = st.columns(4)
+            e1.metric("Danger Words",     str(danger_count))
+            e2.metric("Citation Signals", str(citation_count))
+            e3.metric("Est. Latency",     f"{latency_est} ms")
+            e4.metric("Complexity",       f"{complexity_score:.2f}")
+
+            st.markdown("**Overall Risk Level:**")
+            st.progress(min(risk, 1.0))
 
             if risk > 0.7:
                 st.markdown(
@@ -578,32 +729,125 @@ elif page == "Prompt Lab":
                     unsafe_allow_html=True
                 )
 
+            # ── RAG impact callout ─────────────────────────
+            if rag_reduction < 0:
+                st.markdown(
+                    f'<div class="alert-info">RAG GROUNDING: {rag_enabled} reduced estimated risk by '
+                    f'{abs(rag_reduction):.0%}. Grounded responses are significantly more reliable.</div>',
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    '<div class="alert-warning">NO RAG: Response is based on open generation with no '
+                    'document grounding. Consider enabling RAG to reduce hallucination risk by 12–18%.</div>',
+                    unsafe_allow_html=True
+                )
+
+            # ── Model-specific insight ─────────────────────
+            model_insights = {
+                "GPT-4o":  "GPT-4o is well-calibrated for most tasks but shows elevated hallucination in niche legal/medical citations.",
+                "Claude":  "Claude typically hedges well and has lower hallucination rates, especially in longer analytical tasks.",
+                "Gemini":  "Gemini performs well on factual retrieval but can overstate confidence in low-frequency knowledge areas.",
+                "Llama":   "Open-source Llama models have higher baseline hallucination rates. RAG grounding is strongly recommended.",
+                "Other":   "Unknown model — apply conservative risk thresholds and verify all factual claims independently.",
+            }
+            st.markdown(
+                f'<div class="alert-info">MODEL INSIGHT [{model_sel}]: {model_insights.get(model_sel, "")}</div>',
+                unsafe_allow_html=True
+            )
+
             if danger_count > 0:
                 found = [w for w in dangerous_words if w in response.lower()]
                 st.markdown(
                     f'<div class="alert-warning">Overconfident language detected: '
-                    f'{", ".join(found)}. Real-world AI systems rarely have absolute certainties.</div>',
+                    f'<strong>{", ".join(found)}</strong>. Real-world AI systems rarely have absolute certainties.</div>',
+                    unsafe_allow_html=True
+                )
+
+            if citation_count > 0:
+                st.markdown(
+                    f'<div class="alert-ok">Citation signals detected ({citation_count} instance(s)). '
+                    f'Verify that cited sources actually exist — LLMs can fabricate plausible-sounding references.</div>',
+                    unsafe_allow_html=True
+                )
+
+            # ── Temperature warning ────────────────────────
+            if temperature > 0.8:
+                st.markdown(
+                    f'<div class="alert-warning">HIGH TEMPERATURE ({temperature}): Elevated creativity setting '
+                    f'increases hallucination risk by ~{temp_risk_add:.0%}. Consider reducing to 0.3–0.5 for '
+                    f'factual tasks.</div>',
+                    unsafe_allow_html=True
+                )
+
+            # ── Use case warning ──────────────────────────
+            if use_case_sensitivity in ["High (regulated output)", "Critical (life/legal/financial)"]:
+                st.markdown(
+                    f'<div class="alert-critical">USE CASE ALERT: {use_case_sensitivity} — This output '
+                    f'requires mandatory human review by a qualified professional before use. AI output '
+                    f'in this context carries legal and/or safety liability.</div>',
                     unsafe_allow_html=True
                 )
 
             st.markdown("#### Audit Recommendations")
             recs = []
             if clarity < 0.5:
-                recs.append("Make your prompt more specific — include context, constraints, and exact format needed.")
+                recs.append("**Prompt clarity is low.** Make your prompt more specific — include context, constraints, and the exact format needed.")
             if truth_gap > 2:
-                recs.append("Response is far longer than the prompt suggests is needed. Long responses carry more hallucination surface area.")
+                recs.append("**Response length mismatch.** The response is far longer than the prompt suggests is needed. Long responses carry more hallucination surface area.")
             if danger_count > 0:
-                recs.append("Challenge absolute statements. Ask the AI to cite sources or express uncertainty.")
+                recs.append("**Challenge absolute statements.** Ask the AI to cite sources or express uncertainty instead of using definitive language.")
             if domain_sel in ["Medical","Legal","Finance"]:
-                recs.append(f"This is a high-stakes {domain_sel} domain. Always have a licensed professional validate AI output here.")
+                recs.append(f"**High-stakes domain.** This is a {domain_sel} context. Always have a licensed professional validate AI output before acting on it.")
             if hedge_count < 2:
-                recs.append("The response lacks hedging language. Well-calibrated AI should express uncertainty.")
+                recs.append("**Insufficient hedging.** The response lacks uncertainty language. Well-calibrated AI should express doubt where appropriate.")
+            if rag_enabled == "No RAG (open generation)" and domain_sel in ["Legal","Medical","Finance"]:
+                recs.append("**Enable RAG grounding.** For this domain, connecting the model to a verified document store can reduce hallucination risk by 12–18%.")
+            if temperature > 0.7:
+                recs.append(f"**Lower the temperature.** Current setting ({temperature}) is high for factual tasks. Target 0.2–0.5 for accuracy-critical use cases.")
+            if system_prompt_quality in ["None / Default", "Basic role instruction"] and use_case_sensitivity != "Low (internal draft)":
+                recs.append("**Improve system prompt.** A production-grade system prompt with guardrails can reduce risk by up to 12 percentage points.")
+            if citation_count > 0:
+                recs.append("**Verify all citations.** The response contains citation-like language — check that every referenced source actually exists.")
 
             if recs:
                 for rec in recs:
                     st.markdown(f"- {rec}")
             else:
                 st.success("Prompt and response appear well-formed. Standard review processes apply.")
+
+            # ── Risk radar chart ───────────────────────────
+            st.markdown("#### Risk Radar")
+            radar_vals = [
+                1 - clarity,
+                risk,
+                hall_prob,
+                min(truth_gap / 5, 1),
+                1 - calibration_score,
+                min(danger_count / 5, 1),
+                temp_risk_add,
+            ]
+            radar_labels = ["Low Clarity","Risk Score","Hall. Likelihood","Truth Gap","Miscalibration","Danger Words","Temp Risk"]
+            radar_closed = radar_vals + [radar_vals[0]]
+            label_closed = radar_labels + [radar_labels[0]]
+            rfig = go.Figure(go.Scatterpolar(
+                r=radar_closed, theta=label_closed,
+                fill='toself', fillcolor='rgba(248,113,113,0.15)',
+                line=dict(color='#f87171', width=2)
+            ))
+            rfig.update_layout(
+                polar=dict(
+                    bgcolor="#091629",
+                    radialaxis=dict(visible=True, range=[0,1], gridcolor="#1e3a5f",
+                                   tickfont=dict(color="#475569")),
+                    angularaxis=dict(gridcolor="#1e3a5f")
+                ),
+                paper_bgcolor="#091629", font=dict(color="#94a3b8"),
+                margin=dict(t=40, b=30), height=350
+            )
+            st.plotly_chart(rfig, use_container_width=True)
+            st.caption("Larger filled area = higher overall risk profile. Aim for a small, compact shape.")
+
         else:
             st.warning("Please enter both a prompt and a response to run the audit.")
 
@@ -735,7 +979,7 @@ elif page == "Incident Timeline":
 
 
 # ═══════════════════════════════════════════════════════════
-#  AI HEALTH SCORE  (NEW)
+#  AI HEALTH SCORE  — with model selector
 # ═══════════════════════════════════════════════════════════
 elif page == "AI Health Score":
 
@@ -749,17 +993,22 @@ elif page == "AI Health Score":
         "This is the number you show your board, your VCs, and your compliance team."
     )
 
-    risk_score   = max(0, (1 - df["risk"].mean()) * 100)
-    hall_score   = max(0, (1 - df["hallucination"].mean()) * 100)
-    calibration  = max(0, (1 - abs(df["truth_gap"].mean())) * 100)
-    latency_score = max(0, (1 - df["latency"].mean() / 2200) * 100)
-    toxicity_score = max(0, (1 - df["toxicity"].mean() / 0.3) * 100)
+    # ── Model selector ─────────────────────────────────────
+    hs_model_options = ["All Models"] + sorted(df["model"].unique().tolist())
+    hs_model = st.selectbox("View Health Score For", hs_model_options, key="hs_model_sel")
+    hsdf = df if hs_model == "All Models" else df[df["model"] == hs_model]
+
+    risk_score    = max(0, (1 - hsdf["risk"].mean()) * 100)
+    hall_score    = max(0, (1 - hsdf["hallucination"].mean()) * 100)
+    calibration   = max(0, (1 - abs(hsdf["truth_gap"].mean())) * 100)
+    latency_score = max(0, (1 - hsdf["latency"].mean() / 2200) * 100)
+    toxicity_score= max(0, (1 - hsdf["toxicity"].mean() / 0.3) * 100)
     overall = (
-        risk_score    * 0.30 +
-        hall_score    * 0.25 +
-        calibration   * 0.20 +
-        latency_score * 0.10 +
-        toxicity_score* 0.15
+        risk_score     * 0.30 +
+        hall_score     * 0.25 +
+        calibration    * 0.20 +
+        latency_score  * 0.10 +
+        toxicity_score * 0.15
     )
 
     gauge = go.Figure(go.Indicator(
@@ -779,7 +1028,7 @@ elif page == "AI Health Score":
             ],
             "threshold": {"line": {"color": "#34d399","width": 3}, "thickness": 0.75, "value": 75}
         },
-        title={"text": "Overall AI Health Score",
+        title={"text": f"Overall AI Health Score — {hs_model}",
                "font": {"family": "Syne", "color": "#e2e8f0", "size": 16}},
         number={"font": {"family": "Syne", "size": 56, "color": "#38bdf8"}, "suffix": " / 100"}
     ))
@@ -840,15 +1089,57 @@ elif page == "AI Health Score":
         )
         model_health.append({"Model": m, "Health Score": round(ms, 1)})
     mh_df = pd.DataFrame(model_health).sort_values("Health Score", ascending=False)
-    fig_mh = style_fig(px.bar(mh_df, x="Model", y="Health Score", color="Health Score",
-                              color_continuous_scale=["#f87171","#fbbf24","#34d399"],
-                              title="Model Health Scores"))
-    fig_mh.add_hline(y=75, line_dash="dash", line_color="#38bdf8", annotation_text="Target (75)")
+
+    # highlight selected model
+    colors = ["#38bdf8" if m == hs_model else "#4a6fa5" for m in mh_df["Model"]]
+    fig_mh = go.Figure(go.Bar(
+        x=mh_df["Model"], y=mh_df["Health Score"],
+        marker_color=colors,
+        text=mh_df["Health Score"].astype(str),
+        textposition="outside"
+    ))
+    fig_mh.add_hline(y=75, line_dash="dash", line_color="#34d399", annotation_text="Target (75)")
+    fig_mh.update_layout(title="Model Health Scores", **PLOTLY_THEME)
     st.plotly_chart(fig_mh, use_container_width=True)
+
+    # ── Per-model detailed breakdown table ────────────────
+    st.markdown("#### Detailed Model Comparison")
+    rows_html = ""
+    for row in model_health:
+        m = row["Model"]
+        mdf = df[df["model"] == m]
+        r_s  = max(0, (1 - mdf["risk"].mean()) * 100)
+        h_s  = max(0, (1 - mdf["hallucination"].mean()) * 100)
+        c_s  = max(0, (1 - abs(mdf["truth_gap"].mean())) * 100)
+        l_s  = max(0, (1 - mdf["latency"].mean() / 2200) * 100)
+        t_s  = max(0, (1 - mdf["toxicity"].mean() / 0.3) * 100)
+        hs   = row["Health Score"]
+        g    = "A" if hs >= 85 else "B" if hs >= 70 else "C" if hs >= 55 else "D" if hs >= 40 else "F"
+        gc   = "#34d399" if g in ["A","B"] else "#fbbf24" if g == "C" else "#f87171"
+        highlight = 'background:rgba(56,189,248,0.08);' if m == hs_model else ''
+        rows_html += (
+            f'<tr style="{highlight}">'
+            f'<td style="font-family:\'Space Mono\',monospace;font-size:0.8rem;color:#38bdf8">{m}</td>'
+            f'<td style="color:{gc};font-weight:700">{g}</td>'
+            f'<td>{hs:.1f}</td>'
+            f'<td>{r_s:.1f}</td>'
+            f'<td>{h_s:.1f}</td>'
+            f'<td>{c_s:.1f}</td>'
+            f'<td>{l_s:.1f}</td>'
+            f'<td>{t_s:.1f}</td>'
+            f'</tr>'
+        )
+    table_html = (
+        '<table class="compare-table"><thead><tr>'
+        '<th>Model</th><th>Grade</th><th>Health</th><th>Risk</th>'
+        '<th>Hallucination</th><th>Calibration</th><th>Speed</th><th>Toxicity</th>'
+        f'</tr></thead><tbody>{rows_html}</tbody></table>'
+    )
+    st.markdown(f'<div class="card">{table_html}</div>', unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════
-#  MODEL BENCHMARK  (NEW)
+#  MODEL BENCHMARK
 # ═══════════════════════════════════════════════════════════
 elif page == "Model Benchmark":
 
@@ -943,7 +1234,7 @@ elif page == "Model Benchmark":
 
 
 # ═══════════════════════════════════════════════════════════
-#  COMPLIANCE CHECKER  (NEW)
+#  COMPLIANCE CHECKER
 # ═══════════════════════════════════════════════════════════
 elif page == "Compliance Checker":
 
@@ -978,7 +1269,7 @@ elif page == "Compliance Checker":
              f"Hallucination rate: {hall_rate:.2%}. Target below 10%."),
             ("Article 13 — Transparency & Explainability",
              True, True,
-             "AEGIS audit trail satisfies transparency logging requirements."),
+             "AI CAUGHT audit trail satisfies transparency logging requirements."),
             ("Article 14 — Human Oversight Capability",
              True, True,
              "Platform provides override and escalation pathways."),
@@ -993,7 +1284,7 @@ elif page == "Compliance Checker":
         checks = [
             ("Right to Explanation — Decision Logic",
              True, True,
-             "AEGIS provides audit trails for automated decisions."),
+             "AI CAUGHT provides audit trails for automated decisions."),
             ("Data Minimization in Prompts",
              hall_rate < 0.15, hall_rate < 0.10,
              f"Hallucination rate {hall_rate:.2%} indicates data quality concern."),
@@ -1017,7 +1308,7 @@ elif page == "Compliance Checker":
              f"Toxicity mean: {avg_tox:.3f}. Enterprise policy: below 0.10."),
             ("Model Monitoring — Continuous Audit",
              True, True,
-             "AEGIS provides continuous observability. Requirement satisfied."),
+             "AI CAUGHT provides continuous observability. Requirement satisfied."),
             ("Incident Response Protocol",
              True, True,
              "Timeline and alert features provide incident tracking capability."),
@@ -1086,7 +1377,7 @@ elif page == "Compliance Checker":
 
 
 # ═══════════════════════════════════════════════════════════
-#  RISK SIMULATOR  (NEW)
+#  RISK SIMULATOR
 # ═══════════════════════════════════════════════════════════
 elif page == "Risk Simulator":
 
@@ -1181,7 +1472,6 @@ elif page == "Learning Hub":
         "No jargon. No fluff. Just the most important things to know."
     )
 
-    # ── Article definitions ────────────────────────────────
     ARTICLES = {}
 
     ARTICLES["Why LLMs Hallucinate"] = {
@@ -1227,10 +1517,6 @@ elif page == "Learning Hub":
             "If a model says 'I'm not sure, but this might be the answer,' a human will verify it. "
             "If a model says 'The answer is definitively X,' a human might not — especially under time pressure. "
             "This is why overconfident wrong answers cause more real-world harm than uncertain wrong answers.\n\n"
-            "**The Calibration Crisis**\n\n"
-            "Training processes that reward helpfulness create overconfidence as a side effect. A model trained "
-            "to be maximally helpful learns to express certainty even when it should express doubt — because hedged "
-            "answers score lower on human-rated 'helpfulness' metrics during RLHF.\n\n"
             "**Industry Benchmarks**\n\n"
             "- Below 0.05: Excellent — suitable for autonomous decision support\n"
             "- 0.05 to 0.15: Acceptable — human review should be standard\n"
@@ -1248,92 +1534,49 @@ elif page == "Learning Hub":
             "correlated with expertise. AI systems exploit this instinct without intending to — they produce "
             "authoritative-sounding output because that is what the training data consisted of.\n\n"
             "**RLHF and the Helpful-Confident Feedback Loop**\n\n"
-            "Reinforcement Learning from Human Feedback (RLHF) creates a systematic bias toward confidence. "
-            "Human raters tend to rate confident answers as more helpful, even when subtly wrong. "
-            "The model learns: sound certain, get rewarded.\n\n"
-            "**Real-World Consequences**\n\n"
-            "In clinical settings, AI-assisted diagnostics that express high confidence cause physicians to "
-            "override their own correct judgments. In legal drafting, confident AI causes lawyers to miss "
-            "fabricated case citations. In financial analysis, confident AI projections lead to unchecked model risk.\n\n"
-            "**What Good Looks Like**\n\n"
-            "Well-calibrated models use language like 'likely,' 'approximately,' 'based on available data,' "
-            "and 'you may want to verify.' These hedges are a feature, not a weakness. "
-            "Their absence is a red flag."
+            "Reinforcement Learning from Human Feedback (RLHF) trains models to maximise human approval ratings. "
+            "Humans tend to rate confident, fluent, authoritative responses more highly — even when those responses "
+            "are wrong. This creates a training signal that systematically rewards overconfidence.\n\n"
+            "**Practical Implication**\n\n"
+            "Never treat AI confidence as ground truth. A model that says it is '95% sure' may actually be right "
+            "only 60% of the time on that class of question. The confidence score reflects training distribution, "
+            "not actual reliability."
         )
     }
 
-    ARTICLES["Prompt Engineering Reality"] = {
-        "tags": ["Practical","Engineering","Intermediate"],
+    ARTICLES["RAG: The Hallucination Cure"] = {
+        "tags": ["Technical","Solutions","Engineering"],
         "read_time": "6 min",
         "level": "Intermediate",
         "body": (
-            "**What Prompt Engineering Actually Is**\n\n"
-            "Prompt engineering is the practice of crafting inputs to an LLM to steer its outputs. "
-            "At its core, it is exploiting the statistical patterns of the model's training data. "
-            "When you say 'You are an expert doctor,' you are not installing expertise — you are selecting "
-            "a region of the model's probability distribution associated with medical text.\n\n"
-            "**What It Actually Solves**\n\n"
-            "- Format control: telling the model to respond in JSON, bullet points, or a specific structure\n"
-            "- Role priming: establishing a persona that activates domain-specific vocabulary\n"
-            "- Chain-of-thought: forcing step-by-step reasoning, which genuinely reduces simple logical errors\n"
-            "- Constraint setting: reducing the space of possible outputs\n\n"
-            "**What It Does NOT Solve**\n\n"
-            "- Knowledge gaps: a model that does not know a fact cannot be prompted to know it\n"
-            "- Hallucination at depth: well-crafted prompts reduce but do not eliminate hallucination\n"
-            "- Context memory: LLMs have no persistent memory\n"
-            "- Ground truth: no prompt can make a model verify claims against external reality\n\n"
-            "**The Chain-of-Thought Discovery**\n\n"
-            "Adding 'Let us think step by step' can increase mathematical reasoning accuracy by 20 to 40% "
-            "on benchmark tasks. This works because it forces the model to externalise intermediate "
-            "reasoning steps, catching its own errors in the process.\n\n"
-            "**System Prompts as Governance**\n\n"
-            "Well-designed system prompts are a first line of AI governance. They can enforce tone, "
-            "restrict dangerous topics, require sourcing, and establish domain boundaries. "
-            "But adversarial inputs can bypass even well-designed system prompts — AEGIS-level auditing "
-            "is required as the second layer."
+            "**What Is RAG?**\n\n"
+            "Retrieval-Augmented Generation (RAG) is a technique that connects an LLM to a verified knowledge base. "
+            "Instead of generating answers purely from training memory, the model first retrieves relevant documents "
+            "and then generates a response grounded in those documents.\n\n"
+            "**Why RAG Reduces Hallucination**\n\n"
+            "When a model has access to a retrieved document, it can quote, paraphrase, or reason from a real source "
+            "rather than reconstructing information from statistical patterns. This reduces fabrication hallucination "
+            "dramatically — by 40–70% in controlled benchmarks.\n\n"
+            "**RAG Limitations**\n\n"
+            "- RAG cannot fix hallucination if the retrieval step returns irrelevant documents\n"
+            "- The model may still confabulate when the retrieved context is insufficient\n"
+            "- RAG adds latency — typically 200–800ms for retrieval\n"
+            "- Requires maintaining a high-quality, up-to-date knowledge base\n\n"
+            "**Implementation Checklist**\n\n"
+            "1. Define your knowledge corpus (internal docs, regulations, product data)\n"
+            "2. Chunk documents into 300–500 token segments\n"
+            "3. Embed and index using a vector database (Pinecone, Weaviate, pgvector)\n"
+            "4. Retrieve top-K relevant chunks at query time\n"
+            "5. Inject retrieved chunks into the model's context window\n"
+            "6. Monitor retrieval relevance scores alongside hallucination rates"
         )
     }
 
-    ARTICLES["RAG Limitations"] = {
-        "tags": ["Architecture","Technical","Intermediate"],
+    ARTICLES["AI in High-Stakes Domains"] = {
+        "tags": ["Industry","Risk","Compliance"],
         "read_time": "7 min",
         "level": "Intermediate",
         "body": (
-            "**What RAG Is**\n\n"
-            "Retrieval-Augmented Generation adds a retrieval step before the model generates a response. "
-            "Instead of relying purely on training weights, the model first retrieves relevant document chunks "
-            "from a vector database, then generates a response conditioned on those passages.\n\n"
-            "**What RAG Genuinely Solves**\n\n"
-            "- Knowledge freshness: documents updated in the vector DB are immediately available\n"
-            "- Source attribution: responses can cite specific document sources\n"
-            "- Domain specificity: private internal documents can ground enterprise AI\n"
-            "- Fabrication reduction: a model given the right document is far less likely to fabricate\n\n"
-            "**RAG's Hidden Failure Modes**\n\n"
-            "1. **Retrieval failure** — If the relevant document is not retrieved, the model still generates "
-            "an answer — from training weights, not truth. The system appears to work but has silently failed.\n\n"
-            "2. **Conflation** — When multiple retrieved chunks contain partially correct but conflicting "
-            "information, the model may combine them into a plausible but inaccurate synthesis.\n\n"
-            "3. **Faithfulness gap** — Models do not always follow retrieved context faithfully. "
-            "Some models override retrieved passages with training priors.\n\n"
-            "4. **Chunk poisoning** — If the vector database contains incorrect or adversarially crafted "
-            "documents, RAG amplifies those errors at scale.\n\n"
-            "**Production RAG Metrics to Track**\n\n"
-            "- Retrieval relevance: are the retrieved chunks actually relevant?\n"
-            "- Context faithfulness: does the final response match the retrieved content?\n"
-            "- Answer groundedness: can every claim be traced to a retrieved passage?\n\n"
-            "AEGIS monitors the downstream effects of all these failure modes through hallucination and truth gap metrics."
-        )
-    }
-
-    ARTICLES["Understanding AI Risk in High-Stakes Domains"] = {
-        "tags": ["Compliance","Risk Management","Non-Technical"],
-        "read_time": "8 min",
-        "level": "Intermediate",
-        "body": (
-            "**Why Domain Matters**\n\n"
-            "The same hallucination that produces a mildly incorrect movie recommendation is a different "
-            "category of event when it invents a drug dosage, fabricates a legal precedent, or misquotes "
-            "a financial regulation.\n\n"
             "**Legal Domain: The Citation Crisis**\n\n"
             "In 2023, lawyers filed court documents with AI-generated citations to cases that did not exist. "
             "The model had fabricated plausible-sounding case names, docket numbers, and judicial quotes. "
@@ -1374,18 +1617,12 @@ elif page == "Learning Hub":
             "healthcare, legal services, financial decisions, critical infrastructure, and employment.\n\n"
             "3. **Limited Risk** — Lighter obligations. Chatbots must disclose they are AI.\n\n"
             "4. **Minimal Risk** — No regulation. Spam filters, AI in video games.\n\n"
-            "**What High-Risk AI Must Provide**\n\n"
-            "- A risk management system documented throughout the lifecycle\n"
-            "- High-quality training data with appropriate governance\n"
-            "- Technical documentation sufficient for regulators to assess conformity\n"
-            "- Human oversight — a qualified human must be able to review and override AI decisions\n"
-            "- Registration in the EU database of high-risk AI systems before deployment\n\n"
             "**Penalties**\n\n"
             "- Up to EUR 30 million or 6% of global revenue for prohibited AI violations\n"
             "- Up to EUR 20 million or 4% for high-risk AI obligation violations\n"
             "- Up to EUR 10 million or 2% for other violations\n\n"
-            "**How AEGIS Helps**\n\n"
-            "AEGIS directly addresses Articles 9 (risk management), 10 (data quality), 13 (transparency), "
+            "**How AI CAUGHT Helps**\n\n"
+            "AI CAUGHT directly addresses Articles 9 (risk management), 10 (data quality), 13 (transparency), "
             "and 15 (accuracy and robustness). The Health Score, Compliance Checker, and Export Report "
             "features populate the technical documentation that regulators may request."
         )
@@ -1407,34 +1644,21 @@ elif page == "Learning Hub":
             "**Temperature Scaling**\n\n"
             "The most common post-training calibration technique. A single scalar parameter T (temperature) "
             "is applied to the model's logits before the softmax operation. T > 1 softens the distribution "
-            "(reduces overconfidence). T < 1 sharpens it. Temperature scaling is fit on a held-out validation "
-            "set and adds near-zero computational overhead at inference time.\n\n"
-            "**Reliability Diagrams**\n\n"
-            "A reliability diagram plots confidence on the x-axis against accuracy on the y-axis. "
-            "A perfectly calibrated model's reliability diagram is a diagonal line. Overconfident models "
-            "produce curves that bow below the diagonal — their accuracy does not match their confidence.\n\n"
+            "(reduces overconfidence). T < 1 sharpens it.\n\n"
             "**Why Most LLMs Are Poorly Calibrated**\n\n"
             "- RLHF training rewards confident-sounding responses\n"
             "- Chain-of-thought prompting can improve or worsen calibration depending on implementation\n"
             "- Calibration degrades in out-of-distribution domains\n"
-            "- Instruction fine-tuning often increases overconfidence even as it improves task performance\n\n"
-            "**Production Implications**\n\n"
-            "For any system making consequential decisions, calibration is as important as accuracy. "
-            "A 95% accurate but poorly calibrated model can be more dangerous than a 90% accurate "
-            "well-calibrated model, because users cannot identify when to distrust it."
+            "- Instruction fine-tuning often increases overconfidence even as it improves task performance"
         )
     }
 
-    # ── Render ────────────────────────────────────────────
     article_names = list(ARTICLES.keys())
     article_choice = st.selectbox("Choose Article", article_names)
 
     if article_choice in ARTICLES:
         art = ARTICLES[article_choice]
-
-        tag_html = "".join(
-            f'<span class="article-tag">{t}</span>' for t in art["tags"]
-        )
+        tag_html = "".join(f'<span class="article-tag">{t}</span>' for t in art["tags"])
         level_color = (
             "#34d399" if art["level"] == "Beginner"
             else "#fbbf24" if art["level"] == "Intermediate"
@@ -1452,7 +1676,6 @@ elif page == "Learning Hub":
         )
         st.markdown(art["body"])
 
-    # ── Quick-reference glossary ──────────────────────────
     st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
     st.markdown("#### Quick Reference Glossary")
     glossary = {
@@ -1473,7 +1696,7 @@ elif page == "Learning Hub":
 
 
 # ═══════════════════════════════════════════════════════════
-#  ECONOMICS  (ORIGINAL — PRESERVED)
+#  ECONOMICS  — with model selector
 # ═══════════════════════════════════════════════════════════
 elif page == "Economics":
 
@@ -1486,4 +1709,377 @@ elif page == "Economics":
         "This calculator makes that invisible cost visible."
     )
 
-    df
+    # ── Model selector ─────────────────────────────────────
+    econ_model_options = ["All Models"] + sorted(df["model"].unique().tolist())
+    econ_model = st.selectbox("Analyse Economics For", econ_model_options, key="econ_model_sel")
+    edf = df if econ_model == "All Models" else df[df["model"] == econ_model]
+
+    # ── Cost Calculator inputs ─────────────────────────────
+    st.markdown("#### Shadow Cost Calculator")
+    ec1, ec2, ec3 = st.columns(3)
+    with ec1:
+        daily_volume = st.number_input("Daily AI Queries", 500, 5_000_000, 50_000, step=1000, key="econ_vol")
+    with ec2:
+        hourly_rate  = st.number_input("Avg Employee Hourly Rate ($)", 10, 500, 65, key="econ_rate")
+    with ec3:
+        verify_mins  = st.number_input("Minutes to Verify 1 AI Response", 1, 60, 8, key="econ_mins")
+
+    econ_domain = st.selectbox("Primary Deployment Domain",
+                               ["General","Legal","Medical","Finance","Code","Support"], key="econ_domain")
+
+    domain_multiplier_econ = {"Legal":3.8,"Medical":4.2,"Finance":3.0,"Code":1.2,"Support":1.0,"General":1.5}
+    dmult = domain_multiplier_econ[econ_domain]
+
+    hall_rate_e  = edf["hallucination"].mean()
+    avg_risk_e   = edf["risk"].mean()
+    truth_gap_e  = edf["truth_gap"].mean()
+
+    daily_hall_count     = daily_volume * hall_rate_e
+    verification_cost_d  = daily_hall_count * (verify_mins / 60) * hourly_rate * dmult
+    legal_exposure_d     = daily_volume * avg_risk_e * 0.001 * dmult * 500   # $500 avg legal incident
+    trust_erosion_d      = daily_volume * hall_rate_e * 0.05 * 25            # $25 avg customer churn cost
+    total_shadow_cost_d  = verification_cost_d + legal_exposure_d + trust_erosion_d
+    annual_shadow         = total_shadow_cost_d * 365
+
+    st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
+    st.markdown(f"#### Shadow Cost Breakdown — **{econ_model}**")
+
+    sc1, sc2, sc3, sc4 = st.columns(4)
+    sc1.metric("Daily Verification Cost",  f"${verification_cost_d:,.0f}")
+    sc2.metric("Daily Legal Exposure",     f"${legal_exposure_d:,.0f}")
+    sc3.metric("Daily Trust Erosion",      f"${trust_erosion_d:,.0f}")
+    sc4.metric("Est. Annual Shadow Cost",  f"${annual_shadow:,.0f}")
+
+    # ── Cost breakdown chart ───────────────────────────────
+    breakdown_fig = go.Figure(go.Pie(
+        labels=["Verification Labour","Legal Exposure","Trust Erosion"],
+        values=[verification_cost_d, legal_exposure_d, trust_erosion_d],
+        hole=0.55,
+        marker=dict(colors=["#38bdf8","#f87171","#fbbf24"]),
+    ))
+    breakdown_fig.update_layout(
+        title="Daily Shadow Cost Composition",
+        paper_bgcolor="#091629", plot_bgcolor="#091629",
+        font=dict(color="#94a3b8", family="Inter"),
+        legend=dict(bgcolor="#0d1f3c", bordercolor="#1e3a5f"),
+        margin=dict(t=50, b=20)
+    )
+    st.plotly_chart(breakdown_fig, use_container_width=True)
+
+    # ── Per-model shadow cost comparison ──────────────────
+    st.markdown("#### Shadow Cost by Model")
+    model_costs = []
+    for m in df["model"].unique():
+        mdf = df[df["model"] == m]
+        mhr  = mdf["hallucination"].mean()
+        mar  = mdf["risk"].mean()
+        mvc  = daily_volume * mhr * (verify_mins / 60) * hourly_rate * dmult
+        mle  = daily_volume * mar * 0.001 * dmult * 500
+        mte  = daily_volume * mhr * 0.05 * 25
+        mtot = (mvc + mle + mte) * 365
+        model_costs.append({"Model": m, "Annual Shadow Cost ($)": round(mtot, 0),
+                            "Hall Rate": round(mhr * 100, 1)})
+    mc_df = pd.DataFrame(model_costs).sort_values("Annual Shadow Cost ($)", ascending=True)
+
+    bar_colors = ["#38bdf8" if m == econ_model else "#4a6fa5" for m in mc_df["Model"]]
+    cost_fig = go.Figure(go.Bar(
+        x=mc_df["Annual Shadow Cost ($)"], y=mc_df["Model"],
+        orientation="h",
+        marker_color=bar_colors,
+        text=[f"${v:,.0f}" for v in mc_df["Annual Shadow Cost ($)"]],
+        textposition="outside"
+    ))
+    cost_fig.update_layout(title="Estimated Annual Shadow Cost by Model", **PLOTLY_THEME)
+    st.plotly_chart(cost_fig, use_container_width=True)
+    st.caption("Based on your entered volume, rate, and domain. Lower bar = cheaper to operate.")
+
+    # ── ROI of reducing hallucination ─────────────────────
+    st.markdown("#### ROI Simulator: Cost of Reducing Hallucination")
+    roi_reduction = st.slider("Hallucination reduction via RAG / better prompting (%)", 0, 80, 40, step=5, key="econ_roi")
+    rag_cost_annual = 12_000 * (roi_reduction / 40)   # rough RAG infrastructure cost
+    saved = annual_shadow * (roi_reduction / 100)
+    net_roi = saved - rag_cost_annual
+
+    r1, r2, r3 = st.columns(3)
+    r1.metric("Annual Savings", f"${saved:,.0f}")
+    r2.metric("RAG / Improvement Cost", f"${rag_cost_annual:,.0f}")
+    r3.metric("Net Annual ROI", f"${net_roi:,.0f}", delta="Positive" if net_roi > 0 else "Negative")
+
+    if net_roi > 0:
+        st.markdown(
+            f'<div class="alert-ok">POSITIVE ROI: Investing in hallucination reduction delivers an estimated '
+            f'<strong>${net_roi:,.0f}</strong> net annual benefit at your current scale.</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            f'<div class="alert-warning">MARGINAL ROI: At current scale, the improvement cost may outweigh savings. '
+            f'Re-evaluate at higher query volumes or in higher-stakes domains.</div>',
+            unsafe_allow_html=True
+        )
+
+    # ── Key model stats for selected model ────────────────
+    st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
+    st.markdown(f"#### Key Risk Indicators — {econ_model}")
+    ki1, ki2, ki3, ki4 = st.columns(4)
+    ki1.metric("Hallucination Rate",  f"{hall_rate_e:.2%}")
+    ki2.metric("Avg Risk Score",      f"{avg_risk_e:.3f}")
+    ki3.metric("Truth Gap",           f"{truth_gap_e:.3f}")
+    ki4.metric("Avg Latency",         f"{edf['latency'].mean():.0f} ms")
+
+    domain_cost_df = edf.groupby("domain")["risk"].mean().reset_index()
+    domain_cost_df["Est. Daily Cost ($)"] = domain_cost_df["risk"] * daily_volume * 0.001 * dmult * 500 / 5
+    domain_cost_df = domain_cost_df.sort_values("Est. Daily Cost ($)", ascending=False)
+    fig_dc = style_fig(px.bar(domain_cost_df, x="domain", y="Est. Daily Cost ($)",
+                              title=f"Daily Risk Cost by Domain — {econ_model}",
+                              color="Est. Daily Cost ($)", color_continuous_scale="Reds"))
+    st.plotly_chart(fig_dc, use_container_width=True)
+    st.caption("Which domains are costing you the most due to AI risk exposure.")
+
+
+# ═══════════════════════════════════════════════════════════
+#  EXPORT REPORT  — fully working
+# ═══════════════════════════════════════════════════════════
+elif page == "Export Report":
+
+    section_header("Export Report")
+    st.markdown('<div class="aegis-subtitle">Download your full audit trail, prompt lab results, and system health data</div>', unsafe_allow_html=True)
+
+    plain_explainer("What Can You Export?",
+        "Export your AI audit data in multiple formats for board presentations, compliance submissions, "
+        "and engineering reviews. Prompt Lab audit results are included when you have run an audit in this session."
+    )
+
+    # ── System summary stats ───────────────────────────────
+    avg_risk  = df["risk"].mean()
+    hall_rate = df["hallucination"].mean()
+    truth_gap = df["truth_gap"].mean()
+    avg_tox   = df["toxicity"].mean()
+    health    = round((1 - avg_risk) * 100, 1)
+    grade     = "A" if health >= 85 else "B" if health >= 70 else "C" if health >= 55 else "D" if health >= 40 else "F"
+
+    st.markdown("#### Current System Snapshot")
+    snap1, snap2, snap3, snap4, snap5 = st.columns(5)
+    snap1.metric("Health Score", f"{health}")
+    snap2.metric("Grade", grade)
+    snap3.metric("Avg Risk", f"{avg_risk:.3f}")
+    snap4.metric("Hall. Rate", f"{hall_rate:.2%}")
+    snap5.metric("Truth Gap", f"{truth_gap:.3f}")
+
+    st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
+
+    # ── Export 1: Full dataset CSV ─────────────────────────
+    st.markdown("#### Export 1 — Full Audit Dataset (CSV)")
+    st.markdown("Complete 1,200-row dataset with all model metrics, risk scores, and domain breakdowns.")
+    csv_data = df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="⬇ Download Full Dataset (CSV)",
+        data=csv_data,
+        file_name=f"ai_caught_full_dataset_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv",
+        key="dl_csv_full"
+    )
+
+    # ── Export 2: Model Summary CSV ───────────────────────
+    st.markdown("#### Export 2 — Model Summary Report (CSV)")
+    st.markdown("Aggregated per-model metrics: risk, hallucination, truth gap, latency, toxicity, correctness.")
+    metrics_cols  = ["risk","hallucination","truth_gap","latency","toxicity","correctness","confidence"]
+    model_summary = df.groupby("model")[metrics_cols].mean().round(4).reset_index()
+    model_summary.columns = ["Model","Avg Risk","Hallucination Rate","Truth Gap","Avg Latency (ms)","Avg Toxicity","Correctness","Confidence"]
+
+    model_health_list = []
+    for m in df["model"].unique():
+        mdf = df[df["model"] == m]
+        ms = (
+            max(0, (1 - mdf["risk"].mean()) * 100)          * 0.30 +
+            max(0, (1 - mdf["hallucination"].mean()) * 100)  * 0.25 +
+            max(0, (1 - abs(mdf["truth_gap"].mean())) * 100) * 0.20 +
+            max(0, (1 - mdf["latency"].mean() / 2200) * 100) * 0.10 +
+            max(0, (1 - mdf["toxicity"].mean() / 0.3) * 100) * 0.15
+        )
+        g = "A" if ms >= 85 else "B" if ms >= 70 else "C" if ms >= 55 else "D" if ms >= 40 else "F"
+        model_health_list.append({"Model": m, "Health Score": round(ms, 1), "Grade": g})
+    mh_df2 = pd.DataFrame(model_health_list)
+    model_export = model_summary.merge(mh_df2, on="Model")
+
+    model_csv = model_export.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="⬇ Download Model Summary (CSV)",
+        data=model_csv,
+        file_name=f"ai_caught_model_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv",
+        key="dl_csv_model"
+    )
+
+    # ── Export 3: Domain Risk CSV ──────────────────────────
+    st.markdown("#### Export 3 — Domain Risk Breakdown (CSV)")
+    domain_summary = df.groupby(["domain","model"])[["risk","hallucination","truth_gap","toxicity","correctness"]].mean().round(4).reset_index()
+    domain_csv = domain_summary.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="⬇ Download Domain Risk Report (CSV)",
+        data=domain_csv,
+        file_name=f"ai_caught_domain_risk_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv",
+        key="dl_csv_domain"
+    )
+
+    # ── Export 4: Prompt Lab Audit (JSON + TXT) ────────────
+    st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
+    st.markdown("#### Export 4 — Prompt Lab Audit Results")
+
+    if "last_audit" in st.session_state and st.session_state["last_audit"]:
+        audit = st.session_state["last_audit"]
+
+        st.markdown(
+            f'<div class="alert-ok">Prompt Lab audit available from <strong>{audit["timestamp"]}</strong> — '
+            f'Model: <strong>{audit["model"]}</strong>, Domain: <strong>{audit["domain"]}</strong>, '
+            f'Hallucination Risk: <strong>{audit["hallucination_risk"]}</strong></div>',
+            unsafe_allow_html=True
+        )
+
+        # ── JSON export ───────────────────────────────────
+        audit_json = json.dumps(audit, indent=2, ensure_ascii=False).encode("utf-8")
+        st.download_button(
+            label="⬇ Download Prompt Audit (JSON)",
+            data=audit_json,
+            file_name=f"ai_caught_prompt_audit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+            mime="application/json",
+            key="dl_audit_json"
+        )
+
+        # ── Plain-text report ─────────────────────────────
+        txt_lines = [
+            "=" * 60,
+            "AI CAUGHT — PROMPT AUDIT REPORT",
+            "=" * 60,
+            f"Generated : {audit['timestamp']}",
+            f"Model     : {audit['model']}",
+            f"Domain    : {audit['domain']}",
+            f"RAG       : {audit['rag']}",
+            f"Temperature: {audit['temperature']}",
+            f"System Prompt Quality: {audit['system_prompt_quality']}",
+            f"Use Case Sensitivity : {audit['use_case_sensitivity']}",
+            "",
+            "─" * 60,
+            "SCORES",
+            "─" * 60,
+            f"Clarity Score          : {audit['clarity_score']}",
+            f"Hallucination Risk     : {audit['hallucination_risk']}",
+            f"Hallucination Likelihood: {audit['hallucination_likelihood_pct']}%",
+            f"Truth Gap Proxy        : {audit['truth_gap_proxy']}",
+            f"Calibration Score      : {audit['calibration_score']}",
+            f"Hedge Ratio            : {audit['hedge_ratio']}",
+            f"Danger Words Found     : {', '.join(audit['danger_words_found']) or 'None'}",
+            f"Citation Signals       : {audit['citation_signals']}",
+            f"Estimated Latency      : {audit['estimated_latency_ms']} ms",
+            f"Complexity Score       : {audit['complexity_score']}",
+            "",
+            "─" * 60,
+            "PROMPT",
+            "─" * 60,
+            audit['prompt'],
+            "",
+            "─" * 60,
+            "RESPONSE",
+            "─" * 60,
+            audit['response'],
+            "",
+            "=" * 60,
+            "AI CAUGHT // AI Observability OS // 2026",
+            "=" * 60,
+        ]
+        txt_report = "\n".join(txt_lines).encode("utf-8")
+        st.download_button(
+            label="⬇ Download Prompt Audit (TXT Report)",
+            data=txt_report,
+            file_name=f"ai_caught_prompt_audit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+            mime="text/plain",
+            key="dl_audit_txt"
+        )
+
+        # ── Preview ───────────────────────────────────────
+        with st.expander("Preview Audit Data"):
+            st.json(audit)
+
+    else:
+        st.markdown(
+            '<div class="alert-warning">No Prompt Lab audit available yet. '
+            'Go to <strong>Prompt Lab</strong>, enter a prompt and response, and click <strong>Run Audit</strong>. '
+            'Then return here to download the results.</div>',
+            unsafe_allow_html=True
+        )
+
+    # ── Export 5: Full system text report ─────────────────
+    st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
+    st.markdown("#### Export 5 — Full System Health Report (TXT)")
+
+    worst_domain = df.groupby("domain")["risk"].mean().idxmax()
+    worst_model  = df.groupby("model")["risk"].mean().idxmax()
+    best_model   = df.groupby("model")["risk"].mean().idxmin()
+
+    system_lines = [
+        "=" * 60,
+        "AI CAUGHT — SYSTEM HEALTH REPORT",
+        "=" * 60,
+        f"Generated : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Dataset   : 1,200 synthetic audit events",
+        "",
+        "─" * 60,
+        "SYSTEM OVERVIEW",
+        "─" * 60,
+        f"Overall Health Score   : {health} / 100",
+        f"System Grade           : {grade}",
+        f"Average Risk           : {avg_risk:.4f}",
+        f"Hallucination Rate     : {hall_rate:.2%}",
+        f"Truth Gap              : {truth_gap:.4f}",
+        f"Average Toxicity       : {avg_tox:.4f}",
+        f"Average Latency        : {df['latency'].mean():.0f} ms",
+        f"P95 Latency            : {df['latency'].quantile(0.95):.0f} ms",
+        "",
+        "─" * 60,
+        "MODEL SUMMARY",
+        "─" * 60,
+    ]
+    for _, row in model_export.iterrows():
+        system_lines.append(
+            f"{row['Model']:10s} | Health: {row['Health Score']:5.1f} | Grade: {row['Grade']} | "
+            f"Risk: {row['Avg Risk']:.3f} | Hall: {row['Hallucination Rate']:.2%} | "
+            f"Latency: {row['Avg Latency (ms)']:.0f}ms"
+        )
+    system_lines += [
+        "",
+        "─" * 60,
+        "KEY FINDINGS",
+        "─" * 60,
+        f"Highest Risk Domain    : {worst_domain}",
+        f"Highest Risk Model     : {worst_model}",
+        f"Lowest Risk Model      : {best_model}",
+        "",
+        "─" * 60,
+        "DOMAIN RISK",
+        "─" * 60,
+    ]
+    for domain, grp in df.groupby("domain"):
+        system_lines.append(f"{domain:10s} | Risk: {grp['risk'].mean():.3f} | Hall: {grp['hallucination'].mean():.2%}")
+
+    system_lines += [
+        "",
+        "=" * 60,
+        "AI CAUGHT // AI Observability OS // 2026",
+        "=" * 60,
+    ]
+    sys_txt = "\n".join(system_lines).encode("utf-8")
+    st.download_button(
+        label="⬇ Download System Health Report (TXT)",
+        data=sys_txt,
+        file_name=f"ai_caught_system_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+        mime="text/plain",
+        key="dl_sys_txt"
+    )
+
+    st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div style="font-family:\'Space Mono\',monospace;font-size:0.65rem;color:#334155;text-align:center;padding:8px 0;">'
+        'AI CAUGHT // AI Observability OS // All exports contain synthetic data for demonstration purposes.</div>',
+        unsafe_allow_html=True
+    )
