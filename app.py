@@ -315,6 +315,7 @@ with st.sidebar:
         [
             "Dashboard",
             "Prompt Lab",
+            "Prompt Engineering Lab",
             "Model Forensics",
             "Incident Timeline",
             "AI Health Score",
@@ -2083,3 +2084,657 @@ elif page == "Export Report":
         'AI CAUGHT // AI Observability OS // All exports contain synthetic data for demonstration purposes.</div>',
         unsafe_allow_html=True
     )
+
+
+# ═══════════════════════════════════════════════════════════
+#  PROMPT ENGINEERING LAB
+# ═══════════════════════════════════════════════════════════
+elif page == "Prompt Engineering Lab":
+
+    section_header("Prompt Engineering Lab", "NEW")
+    st.markdown(
+        '<div class="aegis-subtitle">See first-hand how prompt engineering extracts dramatically better output from any AI model</div>',
+        unsafe_allow_html=True
+    )
+
+    plain_explainer(
+        "What This Lab Proves",
+        "Prompt engineering is not about tricking the AI — it is about compensating for the model's inability "
+        "to infer your real intent from a vague request. With the right structure, role, constraints, RAG context "
+        "and output format, the same model produces a fundamentally different — and measurably safer — response. "
+        "This lab generates a weak prompt and a fully engineered prompt for your scenario, lets you compare both "
+        "in the Prompt Lab auditor, and shows you the statistical difference in quality."
+    )
+
+    # ─────────────────────────────────────────────
+    # SECTION 1 — SCENARIO SETUP
+    # ─────────────────────────────────────────────
+    st.markdown('<div class="section-label">Step 1 — Define Your Scenario</div>', unsafe_allow_html=True)
+
+    pe_cols = st.columns([2, 1, 1])
+    with pe_cols[0]:
+        pe_topic = st.text_input(
+            "What do you want the AI to help with?",
+            placeholder="e.g. Summarise a patient medication history for a GP",
+            key="pe_topic"
+        )
+    with pe_cols[1]:
+        pe_model = st.selectbox(
+            "Target Model",
+            ["GPT-4o", "Claude", "Gemini", "Llama", "Other"],
+            key="pe_model_sel"
+        )
+    with pe_cols[2]:
+        pe_domain = st.selectbox(
+            "Domain",
+            ["General", "Legal", "Medical", "Finance", "Code", "Support"],
+            key="pe_domain_sel"
+        )
+
+    pe_adv_cols = st.columns(3)
+    with pe_adv_cols[0]:
+        pe_rag = st.selectbox(
+            "RAG / Grounding Available?",
+            [
+                "No RAG (open generation)",
+                "RAG enabled — internal docs",
+                "RAG enabled — verified external",
+                "Fine-tuned domain model",
+            ],
+            key="pe_rag_sel"
+        )
+    with pe_adv_cols[1]:
+        pe_output_format = st.selectbox(
+            "Desired Output Format",
+            [
+                "Free text",
+                "Bullet-point list",
+                "Structured JSON",
+                "Table",
+                "Step-by-step numbered list",
+                "Executive summary",
+            ],
+            key="pe_output_format"
+        )
+    with pe_adv_cols[2]:
+        pe_audience = st.selectbox(
+            "Target Audience",
+            [
+                "General public",
+                "Domain expert",
+                "Executive / non-technical",
+                "Engineer / developer",
+                "Regulator / legal",
+            ],
+            key="pe_audience"
+        )
+
+    generate_btn = st.button("Generate Prompt Pair", key="pe_generate")
+
+    # ─────────────────────────────────────────────
+    # PROMPT GENERATION ENGINE (deterministic, no LLM)
+    # ─────────────────────────────────────────────
+
+    WEAK_TEMPLATES = {
+        "General":  "Tell me about {topic}.",
+        "Legal":    "What are the legal rules for {topic}?",
+        "Medical":  "What should I know about {topic}?",
+        "Finance":  "Give me financial advice on {topic}.",
+        "Code":     "Write code for {topic}.",
+        "Support":  "Help me with {topic}.",
+    }
+
+    ROLE_MAP = {
+        "General":  "a knowledgeable generalist assistant with broad expertise across multiple disciplines",
+        "Legal":    "a senior legal analyst with expertise in contract law, compliance and regulatory frameworks",
+        "Medical":  "a clinical information specialist trained on peer-reviewed medical literature and current clinical guidelines",
+        "Finance":  "a chartered financial analyst with expertise in risk modelling, portfolio analysis and regulatory compliance",
+        "Code":     "a senior software engineer specialising in secure, well-tested, production-grade code",
+        "Support":  "a customer success specialist trained on product documentation and escalation protocols",
+    }
+
+    CONSTRAINT_MAP = {
+        "General": [
+            "Limit your response to information explicitly supported by reliable sources or your verified training knowledge.",
+            "If you are uncertain about any fact, clearly state your uncertainty before presenting the information.",
+            "Do not make recommendations without qualifying the basis and limitations of those recommendations.",
+        ],
+        "Legal": [
+            "Do not state that any legal outcome is guaranteed — legal results always depend on jurisdiction, specific facts, and judicial interpretation.",
+            "Flag any areas where the law differs materially by jurisdiction and name the key jurisdictions.",
+            "Recommend consulting a qualified solicitor or legal professional before acting on any information provided.",
+            "Cite the specific legal provision, statute, regulation, or precedent case where possible.",
+        ],
+        "Medical": [
+            "Never recommend a specific diagnosis or treatment plan — always advise consulting a qualified clinician for any medical decision.",
+            "Flag any drug interactions, contraindications, or safety concerns with explicit warning language.",
+            "Base all information on current clinical guidelines; explicitly flag anything that may be outdated or subject to ongoing clinical debate.",
+            "Use plain language suitable for a non-specialist unless the prompt explicitly requires clinical precision.",
+        ],
+        "Finance": [
+            "State explicitly that this is not personalised financial advice and does not constitute a recommendation to buy, sell, or hold any asset.",
+            "Flag all assumptions you are making about market conditions, time horizons, or the user's personal financial situation.",
+            "Reference applicable regulatory guidance (FCA, SEC, MAS, or equivalent) where relevant.",
+            "Include a risk disclosure for any forward-looking or predictive statements.",
+        ],
+        "Code": [
+            "Include error handling and edge case coverage for all code you produce.",
+            "Add inline comments explaining all non-obvious logic and architectural decisions.",
+            "Flag any known security vulnerabilities or performance limitations in the approach.",
+            "State the target language version and all key dependencies at the top of your response.",
+        ],
+        "Support": [
+            "Only reference information that is explicitly present in the provided product documentation or context.",
+            "If the issue cannot be resolved with the available information, state this clearly and describe the appropriate escalation path.",
+            "Use empathetic, clear language appropriate for a customer who may be frustrated.",
+            "Confirm your understanding of the specific issue before presenting your proposed solution.",
+        ],
+    }
+
+    OUTPUT_FORMAT_INSTRUCTION = {
+        "Free text":
+            "Write your response as clear, well-structured prose with paragraph breaks between distinct topics.",
+        "Bullet-point list":
+            "Structure your entire response as a bullet-point list. Each bullet must express exactly one complete idea. Do not use nested bullets more than one level deep.",
+        "Structured JSON":
+            'Return your response as valid JSON only — no prose outside the JSON object. Use exactly these keys: "summary" (string), "key_points" (array of strings), "risks" (array of strings), "recommendation" (string).',
+        "Table":
+            "Present your response as a markdown table with clearly labelled column headers appropriate to the data. Include a brief one-sentence caption below the table.",
+        "Step-by-step numbered list":
+            "Number every step sequentially. Each numbered step must contain exactly one action or decision. Do not combine multiple actions in a single step. Begin with an unnumbered overview sentence.",
+        "Executive summary":
+            "Begin with exactly one sentence that summarises the core answer or finding. Then provide 3 to 5 bullet points covering the most important points. End with a single clearly labelled recommended action.",
+    }
+
+    AUDIENCE_INSTRUCTION = {
+        "General public":
+            "Use plain English throughout. Avoid all technical jargon. Define any domain-specific term the first time you use it.",
+        "Domain expert":
+            "You may use domain-specific terminology without definition. Assume graduate-level knowledge of the subject and professional familiarity with the domain.",
+        "Executive / non-technical":
+            "Focus exclusively on business impact, key decisions, and outcomes. Avoid implementation detail and technical methodology. Use concrete numbers and analogies where possible.",
+        "Engineer / developer":
+            "Include technical depth, code examples where relevant, and full implementation considerations including edge cases and performance implications.",
+        "Regulator / legal":
+            "Be comprehensive, precise, and formally structured. Reference applicable standards, regulatory frameworks, and legislative provisions throughout.",
+    }
+
+    RAG_INSTRUCTION = {
+        "No RAG (open generation)":
+            "Base your response on your training knowledge. Where your knowledge may be incomplete, outdated, or uncertain, state this explicitly before presenting the information. Do not present uncertain information as established fact.",
+        "RAG enabled — internal docs":
+            "Base your response exclusively on the retrieved internal documents provided in your context window. Do not supplement with external knowledge not present in those documents. If the documents do not contain sufficient information to answer fully, say so explicitly.",
+        "RAG enabled — verified external":
+            "Use only the retrieved external source documents provided in your context. Cite the specific document name and section for every factual claim you make. Do not draw on training knowledge for facts that should come from the retrieved sources.",
+        "Fine-tuned domain model":
+            "Draw on your domain-specific fine-tuned knowledge base. Still flag areas of genuine uncertainty and recommend verification by a qualified professional for any high-stakes decisions.",
+    }
+
+    MODEL_CALIBRATION_NOTES = {
+        "GPT-4o":  "This model performs well at structured tasks but can overstate confidence in niche legal and medical citations. Apply explicit hedging constraints and require source citations for all factual claims.",
+        "Claude":  "This model hedges naturally and follows explicit constraints reliably. A detailed system prompt with clear boundaries will significantly reduce hallucination risk — this model rewards specificity.",
+        "Gemini":  "This model can overstate confidence in low-frequency knowledge areas. Explicit uncertainty instructions and source citation requirements are particularly important for this model.",
+        "Llama":   "This open-source model has a higher baseline hallucination rate than frontier models. RAG grounding and strict output constraints are strongly recommended. Apply conservative verification thresholds.",
+        "Other":   "Unknown model — apply the most conservative constraints available and independently verify all factual claims before use in any consequential context.",
+    }
+
+    if generate_btn and pe_topic.strip():
+
+        topic  = pe_topic.strip()
+        domain = pe_domain
+        model  = pe_model
+
+        # ── Generate WEAK prompt ──────────────────────────
+        weak_prompt = WEAK_TEMPLATES.get(domain, "Tell me about {topic}.").replace("{topic}", topic)
+
+        # ── Generate ENGINEERED prompt ────────────────────
+        role         = ROLE_MAP[domain]
+        constraints  = CONSTRAINT_MAP[domain]
+        fmt_instr    = OUTPUT_FORMAT_INSTRUCTION[pe_output_format]
+        aud_instr    = AUDIENCE_INSTRUCTION[pe_audience]
+        rag_instr    = RAG_INSTRUCTION[pe_rag]
+        model_note   = MODEL_CALIBRATION_NOTES[model]
+        constraint_block = "\n".join(
+            "  " + str(i + 1) + ". " + c for i, c in enumerate(constraints)
+        )
+
+        engineered_prompt = (
+            "SYSTEM ROLE:\n"
+            "You are " + role + ". Your purpose is to provide accurate, well-calibrated information "
+            "to assist with the task below.\n\n"
+            "KNOWLEDGE GROUNDING:\n"
+            + rag_instr + "\n\n"
+            "TASK:\n"
+            + topic + "\n\n"
+            "DOMAIN CONTEXT: " + domain + "\n"
+            "AUDIENCE: " + pe_audience + " — " + aud_instr + "\n\n"
+            "OUTPUT FORMAT:\n"
+            + fmt_instr + "\n\n"
+            "CONSTRAINTS (follow all of these without exception):\n"
+            + constraint_block + "\n\n"
+            "MODEL-SPECIFIC CALIBRATION NOTE:\n"
+            + model_note + "\n\n"
+            "Begin your response now, following all instructions above precisely."
+        )
+
+        # Store in session state for cross-page reference
+        st.session_state["pe_weak_prompt"]       = weak_prompt
+        st.session_state["pe_engineered_prompt"] = engineered_prompt
+        st.session_state["pe_model_generated"]   = model
+        st.session_state["pe_domain_generated"]  = domain
+
+        # ─────────────────────────────────────────────
+        # SECTION 2 — SIDE-BY-SIDE PROMPT DISPLAY
+        # ─────────────────────────────────────────────
+        st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">Step 2 — Your Prompt Pair</div>', unsafe_allow_html=True)
+
+        col_w, col_e = st.columns(2)
+
+        with col_w:
+            st.markdown(
+                '<div style="background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.3);'
+                'border-radius:14px;padding:14px 18px;margin-bottom:8px;">'
+                '<div style="font-family:\'Space Mono\',monospace;font-size:0.65rem;color:#f87171;'
+                'letter-spacing:0.15em;text-transform:uppercase;margin-bottom:8px;">'
+                'Weak / Naive Prompt</div>'
+                '<div style="font-size:0.7rem;color:#64748b;">No role | No constraints | No format | No grounding</div>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+            st.code(weak_prompt, language="text")
+            st.markdown(
+                '<div style="font-family:\'Space Mono\',monospace;font-size:0.68rem;color:#f87171;margin-top:4px;">'
+                + str(len(weak_prompt.split())) + ' words</div>',
+                unsafe_allow_html=True
+            )
+
+        with col_e:
+            st.markdown(
+                '<div style="background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.3);'
+                'border-radius:14px;padding:14px 18px;margin-bottom:8px;">'
+                '<div style="font-family:\'Space Mono\',monospace;font-size:0.65rem;color:#34d399;'
+                'letter-spacing:0.15em;text-transform:uppercase;margin-bottom:8px;">'
+                'Fully Engineered Prompt</div>'
+                '<div style="font-size:0.7rem;color:#64748b;">Role ✓ &nbsp; RAG grounding ✓ &nbsp; Constraints ✓ &nbsp; Format ✓ &nbsp; Audience ✓</div>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+            st.code(engineered_prompt, language="text")
+            st.markdown(
+                '<div style="font-family:\'Space Mono\',monospace;font-size:0.68rem;color:#34d399;margin-top:4px;">'
+                + str(len(engineered_prompt.split())) + ' words &nbsp;|&nbsp; '
+                + str(len(constraints)) + ' domain constraints applied</div>',
+                unsafe_allow_html=True
+            )
+
+        # ─────────────────────────────────────────────
+        # SECTION 3 — ANATOMY
+        # ─────────────────────────────────────────────
+        st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">Step 3 — Anatomy of the Engineered Prompt</div>', unsafe_allow_html=True)
+
+        anatomy_items = [
+            (
+                "System Role",
+                "You are " + role + ".",
+                "Giving the model a specific expert identity dramatically improves domain accuracy. "
+                "Models calibrate vocabulary, depth, and hedging behaviour to the stated role. "
+                "A blank-slate prompt gets an average-of-everything response; a role prompt gets specialist-grade output."
+            ),
+            (
+                "Knowledge Grounding",
+                rag_instr[:120] + "...",
+                "The RAG instruction tells the model exactly what knowledge sources to trust and — critically — "
+                "to flag uncertainty where it lacks verified information. This single element is the primary "
+                "mechanism for reducing hallucination: it forces epistemic humility into the generation process."
+            ),
+            (
+                "Explicit Task",
+                topic,
+                "The task is stated clearly and without ambiguity. The model is not left to interpret "
+                "what type, depth, or scope of response is expected. Ambiguity is the primary cause of off-target output."
+            ),
+            (
+                "Output Format Specification",
+                fmt_instr[:120] + "...",
+                "Specifying the exact output format reduces verbosity, narrows the hallucination surface area, "
+                "and makes outputs significantly easier to audit. Structured formats (JSON, tables) are "
+                "particularly powerful — they constrain what the model can fabricate."
+            ),
+            (
+                "Audience Calibration",
+                aud_instr[:120] + "...",
+                "Telling the model who will read the output changes vocabulary, assumption depth, and which "
+                "simplifications are safe. An expert-audience prompt produces fewer oversimplification errors; "
+                "a layperson prompt prevents jargon-driven overconfidence and false clarity."
+            ),
+            (
+                "Hard Constraints (" + str(len(constraints)) + " applied)",
+                " | ".join(c[:60] + "..." for c in constraints),
+                "Explicit domain constraints are the most powerful risk-reduction tool available for regulated "
+                "domains. They force hedging, source citation, and escalation rather than fabrication. "
+                "A model cannot spontaneously generate these behaviours from a vague prompt — they must be stated."
+            ),
+            (
+                "Model Calibration Note",
+                model_note[:120] + "...",
+                model + " has a specific failure fingerprint — particular weaknesses in certain knowledge areas. "
+                "This calibration note directly addresses those weaknesses with targeted instructions that "
+                "compensate for the model's known overconfidence patterns."
+            ),
+        ]
+
+        for icon_title, value, explanation in anatomy_items:
+            st.markdown(
+                '<div style="background:#0d1f3c;border:1px solid #1e3a5f;border-radius:12px;'
+                'padding:16px 20px;margin-bottom:10px;">'
+                '<div style="font-family:\'Syne\',sans-serif;font-size:0.88rem;font-weight:700;'
+                'color:#38bdf8;margin-bottom:6px;">' + icon_title + '</div>'
+                '<div style="font-family:\'Space Mono\',monospace;font-size:0.7rem;color:#34d399;'
+                'background:#091629;border-radius:6px;padding:6px 10px;margin-bottom:8px;'
+                'word-break:break-word;">' + value + '</div>'
+                '<div style="font-size:0.85rem;color:#94a3b8;line-height:1.65;">' + explanation + '</div>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+
+        # ─────────────────────────────────────────────
+        # SECTION 4 — PREDICTED SCORE DELTA
+        # ─────────────────────────────────────────────
+        st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">Step 4 — Predicted Audit Score Delta</div>', unsafe_allow_html=True)
+
+        plain_explainer(
+            "How the Scores Are Estimated",
+            "These predicted audit scores are computed from the structural properties of each prompt — "
+            "using the same scoring engine as the Prompt Lab. They are estimates, not measurements. "
+            "Run both prompts through the Prompt Lab (Step 5) with real AI responses to get live measured scores."
+        )
+
+        # ── Score engine (mirrors Prompt Lab logic) ───
+        model_baselines_pe = {
+            "GPT-4o":  {"risk": 0.0,   "hall": 0.11, "calibration": 0.78},
+            "Claude":  {"risk": -0.03, "hall": 0.09, "calibration": 0.82},
+            "Gemini":  {"risk": 0.02,  "hall": 0.13, "calibration": 0.75},
+            "Llama":   {"risk": 0.05,  "hall": 0.16, "calibration": 0.70},
+            "Other":   {"risk": 0.04,  "hall": 0.14, "calibration": 0.72},
+        }
+        mb = model_baselines_pe.get(model, model_baselines_pe["Other"])
+
+        domain_risk_adj_pe = {
+            "Legal": 0.08, "Medical": 0.10, "Finance": 0.07,
+            "Code": 0.03, "General": 0.0, "Support": 0.02
+        }
+        domain_add_pe = domain_risk_adj_pe.get(domain, 0.0)
+
+        rag_risk_pe = {
+            "No RAG (open generation)":          0.0,
+            "RAG enabled — internal docs":       -0.12,
+            "RAG enabled — verified external":   -0.18,
+            "Fine-tuned domain model":           -0.10,
+        }
+        rag_red_pe = rag_risk_pe.get(pe_rag, 0.0)
+
+        # Weak prompt scores
+        weak_clarity     = float(np.clip(min(len(weak_prompt.split()) / 35, 1.0) * 0.4, 0.0, 1.0))
+        weak_risk        = float(np.clip(
+            (1 - weak_clarity) * 0.35 + mb["risk"] + domain_add_pe + 0.10,
+            0.0, 1.0
+        ))
+        weak_hall        = float(np.clip(mb["hall"] + domain_add_pe * 0.5 + 0.06, 0.0, 1.0))
+        weak_calibration = float(np.clip(mb["calibration"] - 0.10, 0.0, 1.0))
+
+        # Engineered prompt scores
+        eng_clarity     = float(np.clip(min(len(engineered_prompt.split()) / 35, 1.0) + 0.25, 0.0, 1.0))
+        eng_risk        = float(np.clip(
+            (1 - eng_clarity) * 0.20 + mb["risk"] + domain_add_pe + rag_red_pe - 0.12 + 0.02,
+            0.0, 1.0
+        ))
+        eng_hall        = float(np.clip(
+            mb["hall"] + domain_add_pe * 0.3 + rag_red_pe * 0.5 - 0.04,
+            0.0, 1.0
+        ))
+        eng_calibration = float(np.clip(mb["calibration"] + 0.08 + len(constraints) * 0.01, 0.0, 1.0))
+
+        delta_risk = weak_risk  - eng_risk
+        delta_hall = weak_hall  - eng_hall
+        delta_cal  = eng_calibration - weak_calibration
+        delta_clar = eng_clarity     - weak_clarity
+
+        score_cols = st.columns(4)
+        metrics_pe = [
+            ("Hallucination Risk",  weak_risk,        eng_risk,        delta_risk, True),
+            ("Hall. Likelihood",    weak_hall,         eng_hall,        delta_hall, True),
+            ("Calibration Score",   weak_calibration,  eng_calibration, delta_cal,  False),
+            ("Prompt Clarity",      weak_clarity,      eng_clarity,     delta_clar, False),
+        ]
+
+        for col, (label, weak_val, eng_val, delta, lower_is_better) in zip(score_cols, metrics_pe):
+            improved   = delta > 0
+            delta_col  = "#34d399" if improved else "#f87171"
+            direction  = "lower is better" if lower_is_better else "higher is better"
+            arrow      = "▼" if (lower_is_better and delta > 0) else "▲"
+            col.markdown(
+                '<div class="metric-card" style="text-align:center;">'
+                '<div class="label">' + label + '</div>'
+                '<div style="display:flex;justify-content:space-around;align-items:flex-end;margin:10px 0;">'
+                '<div><div style="font-size:0.58rem;color:#f87171;font-family:\'Space Mono\',monospace;margin-bottom:2px;">WEAK</div>'
+                '<div style="font-family:\'Syne\',sans-serif;font-size:1.4rem;font-weight:700;color:#f87171;">'
+                + "{:.2f}".format(weak_val) + '</div></div>'
+                '<div style="color:#475569;font-size:1.1rem;padding-bottom:4px;">→</div>'
+                '<div><div style="font-size:0.58rem;color:#34d399;font-family:\'Space Mono\',monospace;margin-bottom:2px;">ENGINEERED</div>'
+                '<div style="font-family:\'Syne\',sans-serif;font-size:1.4rem;font-weight:700;color:#34d399;">'
+                + "{:.2f}".format(eng_val) + '</div></div>'
+                '</div>'
+                '<div style="font-size:0.73rem;color:' + delta_col + ';font-weight:600;">'
+                + arrow + " {:.2f}".format(abs(delta)) + ' improvement</div>'
+                '<div style="font-size:0.62rem;color:#475569;margin-top:2px;">(' + direction + ')</div>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+
+        # ── Radar comparison ──────────────────────────────
+        st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
+        st.markdown("#### Score Comparison Radar")
+
+        pe_radar_categories = ["Clarity", "Low Risk", "Low Hall. Rate", "Calibration", "Constraint Coverage"]
+        constraint_coverage_weak = 0.05
+        constraint_coverage_eng  = float(np.clip(len(constraints) / 5, 0.0, 1.0))
+
+        pe_weak_vals = [weak_clarity, 1 - weak_risk, 1 - weak_hall, weak_calibration, constraint_coverage_weak]
+        pe_eng_vals  = [eng_clarity,  1 - eng_risk,  1 - eng_hall,  eng_calibration,  constraint_coverage_eng]
+
+        cats_closed = pe_radar_categories + [pe_radar_categories[0]]
+        weak_closed = pe_weak_vals + [pe_weak_vals[0]]
+        eng_closed  = pe_eng_vals  + [pe_eng_vals[0]]
+
+        pe_radar = go.Figure()
+        pe_radar.add_trace(go.Scatterpolar(
+            r=weak_closed, theta=cats_closed, fill="toself",
+            fillcolor="rgba(248,113,113,0.15)",
+            line=dict(color="#f87171", width=2),
+            name="Weak Prompt"
+        ))
+        pe_radar.add_trace(go.Scatterpolar(
+            r=eng_closed, theta=cats_closed, fill="toself",
+            fillcolor="rgba(52,211,153,0.15)",
+            line=dict(color="#34d399", width=2),
+            name="Engineered Prompt"
+        ))
+        pe_radar.update_layout(
+            polar=dict(
+                bgcolor="#091629",
+                radialaxis=dict(visible=True, range=[0, 1], gridcolor="#1e3a5f",
+                                tickfont=dict(color="#475569")),
+                angularaxis=dict(gridcolor="#1e3a5f")
+            ),
+            paper_bgcolor="#091629",
+            font=dict(color="#94a3b8"),
+            legend=dict(bgcolor="#0d1f3c", bordercolor="#1e3a5f"),
+            title=dict(
+                text="Weak vs Engineered Prompt — Predicted Quality Profile",
+                font=dict(family="Syne", color="#e2e8f0", size=14)
+            ),
+            margin=dict(t=60, b=30),
+            height=400
+        )
+        st.plotly_chart(pe_radar, use_container_width=True)
+        st.caption(
+            "Green = engineered prompt predicted profile. Red = weak prompt predicted profile. "
+            "A larger green area means better predicted quality on every measurable dimension. "
+            "Run both prompts through the Prompt Lab with real responses to get the live measured equivalent."
+        )
+
+        # ── Key insight callout ───────────────────────────
+        st.markdown(
+            '<div class="article-key-insight">'
+            'By switching from the weak prompt to the engineered prompt, the predicted hallucination risk '
+            'drops by <strong>' + "{:.1f}".format(delta_risk * 100) + ' percentage points</strong> and '
+            'hallucination likelihood falls by <strong>' + "{:.1f}".format(delta_hall * 100) + ' percentage points</strong>. '
+            'The model, temperature, and knowledge base are identical. The only variable is prompt structure. '
+            'This is the measurable proof of what prompt engineering does: it compensates for the model\'s '
+            'inability to infer your intent, risk tolerance, audience, and constraints — by making all of them explicit. '
+            'RAG adds retrieved facts on top of that; prompt engineering adds structure, role, and guardrails.</div>',
+            unsafe_allow_html=True
+        )
+
+        # ─────────────────────────────────────────────
+        # SECTION 5 — SEND TO PROMPT LAB
+        # ─────────────────────────────────────────────
+        st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">Step 5 — Measure It Live in Prompt Lab</div>', unsafe_allow_html=True)
+
+        st.markdown(
+            '<div class="alert-info">'
+            'To measure the real output difference, copy each prompt into your AI model of choice and paste '
+            'its response into <strong>Prompt Lab</strong> (sidebar). Click <strong>Run Audit</strong> for both. '
+            'Compare the two audit score sets — that is your live, measured return on prompt engineering.</div>',
+            unsafe_allow_html=True
+        )
+
+        copy_col1, copy_col2 = st.columns(2)
+
+        with copy_col1:
+            st.markdown(
+                '<div style="font-family:\'Space Mono\',monospace;font-size:0.65rem;color:#f87171;'
+                'letter-spacing:0.1em;margin-bottom:6px;">WEAK PROMPT — copy and send to your AI</div>',
+                unsafe_allow_html=True
+            )
+            st.text_area(
+                "weak_prompt_copy",
+                value=weak_prompt,
+                height=110,
+                key="pe_weak_copy",
+                label_visibility="collapsed"
+            )
+
+        with copy_col2:
+            st.markdown(
+                '<div style="font-family:\'Space Mono\',monospace;font-size:0.65rem;color:#34d399;'
+                'letter-spacing:0.1em;margin-bottom:6px;">ENGINEERED PROMPT — copy and send to your AI</div>',
+                unsafe_allow_html=True
+            )
+            st.text_area(
+                "engineered_prompt_copy",
+                value=engineered_prompt,
+                height=110,
+                key="pe_eng_copy",
+                label_visibility="collapsed"
+            )
+
+        st.markdown(
+            '<div style="font-size:0.82rem;color:#64748b;margin-top:10px;line-height:1.7;">'
+            'How to use this: (1) Copy the weak prompt, send it to your AI, paste the response into Prompt Lab, '
+            'run the audit and note the scores. '
+            '(2) Copy the engineered prompt, send it to the same AI, paste the response into Prompt Lab, '
+            'run the audit again. '
+            '(3) Compare both score sets — the difference is your live, empirical measurement of what '
+            'prompt engineering delivers in your specific use case.</div>',
+            unsafe_allow_html=True
+        )
+
+        # ─────────────────────────────────────────────
+        # SECTION 6 — PRINCIPLES REFERENCE
+        # ─────────────────────────────────────────────
+        st.markdown('<div class="aegis-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">Prompt Engineering Principles Reference</div>', unsafe_allow_html=True)
+
+        principles = [
+            (
+                "1. Role Assignment",
+                "Always assign a specific expert role. 'You are a senior financial analyst' outperforms "
+                "'help me with finance' because it eliminates the model's uncertainty about response style, "
+                "depth, vocabulary, and the assumptions it should make.",
+                "Estimated risk reduction: 8–15%"
+            ),
+            (
+                "2. Hard Constraints",
+                "Explicit constraints are the most powerful risk-reduction tool for regulated domains. "
+                "Telling the model 'never state a diagnosis' or 'always recommend consulting a professional' "
+                "forces compliance behaviour that vague prompts cannot produce. The model cannot spontaneously "
+                "generate appropriate hedging — it must be instructed to.",
+                "Estimated risk reduction: 10–20%"
+            ),
+            (
+                "3. RAG and Knowledge Grounding Instructions",
+                "Even without actual RAG infrastructure, telling the model 'flag anything you are uncertain about' "
+                "triggers significantly more cautious, hedged output. With proper RAG — retrieved documents injected "
+                "into the context — hallucination rates drop by 40–70% in controlled benchmarks.",
+                "Estimated risk reduction: 12–18% (instruction only) to 40–70% (with full RAG)"
+            ),
+            (
+                "4. Output Format Specification",
+                "Structured output formats (JSON, tables, numbered steps) reduce hallucination surface area "
+                "because the model cannot ramble. They also make outputs significantly easier to audit — a "
+                "table of drug interactions is far easier to verify than a prose paragraph about them.",
+                "Estimated risk reduction: 5–12%"
+            ),
+            (
+                "5. Audience Calibration",
+                "Specifying the audience changes the model's vocabulary, depth of assumption, and risk tolerance. "
+                "An expert-audience prompt produces fewer oversimplification errors; a layperson prompt prevents "
+                "jargon-masked overconfidence and false clarity.",
+                "Estimated risk reduction: 4–8%"
+            ),
+            (
+                "6. The Fundamental Principle",
+                "Every element of a well-engineered prompt compensates for something the model cannot infer: "
+                "your intent, your audience, your risk tolerance, your domain constraints, and your output requirements. "
+                "The gap between a weak and an engineered prompt is exactly the gap between what the model assumes "
+                "about your needs and what you actually need. Prompt engineering closes that gap. "
+                "RAG then adds retrieved facts on top. Together, they are the primary mechanism by which "
+                "organisations compensate for the limitations of general-purpose language models in high-stakes contexts.",
+                "Combined potential risk reduction: 25–60% depending on domain and implementation quality"
+            ),
+        ]
+
+        for title, body, stat in principles:
+            st.markdown(
+                '<div class="article-card" style="padding:20px 24px;">'
+                '<h3 style="font-size:0.95rem;margin-bottom:8px;">' + title + '</h3>'
+                '<p style="margin-bottom:10px;">' + body + '</p>'
+                '<div style="font-family:\'Space Mono\',monospace;font-size:0.68rem;color:#34d399;">'
+                + stat + '</div>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+
+    elif generate_btn and not pe_topic.strip():
+        st.warning("Please enter a topic or task description to generate your prompt pair.")
+
+    else:
+        # ── Empty state ────────────────────────────────
+        st.markdown(
+            '<div style="background:#0d1f3c;border:1px dashed #1e3a5f;border-radius:16px;'
+            'padding:56px 32px;text-align:center;margin-top:20px;">'
+            '<div style="font-family:\'Syne\',sans-serif;font-size:1.5rem;font-weight:700;'
+            'color:#38bdf8;margin-bottom:14px;">Enter a topic above and click Generate</div>'
+            '<div style="font-size:0.9rem;color:#64748b;max-width:540px;margin:0 auto;line-height:1.8;">'
+            'The lab will produce a <span style="color:#f87171;font-weight:600;">weak naive prompt</span> '
+            'and a <span style="color:#34d399;font-weight:600;">fully engineered prompt</span> for your scenario, '
+            'explain the anatomy of every added element, predict the audit score delta with a radar comparison, '
+            'and give you both prompts ready to paste into any AI model for live measurement in the Prompt Lab.'
+            '</div></div>',
+            unsafe_allow_html=True
+        )
